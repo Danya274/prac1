@@ -1,5 +1,6 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
+from datetime import datetime
+from sqlalchemy import DateTime
 
 
 class Base(DeclarativeBase):
@@ -11,5 +12,6 @@ class NewsModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str]
-    text: Mapped[str]
-    date: Mapped[str]
+    text: Mapped[str] = mapped_column(nullable=True)
+    link: Mapped[str]
+    date: Mapped[datetime] = mapped_column(DateTime)

@@ -25,6 +25,7 @@ async def run_parser():
                 logging.info('No data')
         except Exception as e:
             logging.info(f'Error in parser loop: {e}')
+            continue
         logging.info(f'Parsing complete. Next parsing in 1 hour')
         await asyncio.sleep(3600)
 
@@ -49,3 +50,4 @@ if __name__ == '__main__':
         logging.info(f'Error: {e}')
     except KeyboardInterrupt:
         logging.info(f'Programm stopped')
+

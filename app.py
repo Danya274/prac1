@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from typing import Annotated
 
 from database.models import NewsModel
@@ -6,6 +6,8 @@ from database.db import get_session
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+
+from schemas import DefaultResponse, NewsSchema
 
 router = APIRouter()
 
@@ -16,6 +18,12 @@ async def get_news(news_id: int, session: SessionDep):
     result = await session.execute(query)
     news = result.scalars().one_or_none()
     if news:
-        return news
+        return NewsSchema(
+            id=news.id,
+            title=news.title,
+            text=news.text,
+            link=news.link,
+            date=news.date,
+        )
     else:
-        raise HTTPException(status_code=404, detail="News not found")
+        return DefaultResponse(error=True, message="News not found")

@@ -33,7 +33,7 @@ async def drop_database():
 
 async def write_to_db(data, session: AsyncSession):
     for item in data:
-        query = select(NewsModel).where(NewsModel.title == item['title'])
+        query = select(NewsModel).where(NewsModel.link == item['link'])
         result = await session.execute(query)
 
         if result.scalar_one_or_none():
@@ -42,6 +42,7 @@ async def write_to_db(data, session: AsyncSession):
         new_item = NewsModel(
             title=item['title'],
             text=item['text'],
+            link=item['link'],
             date=item['date'],
         )
         session.add(new_item)

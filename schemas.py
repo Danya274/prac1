@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Any
+from datetime import datetime
 
 class DefaultResponse(BaseModel):
     error: bool
@@ -12,4 +13,4 @@ class NewsSchema(BaseModel):
     title: str | None = None
     text: str | None = None
     link: str | None = None
-    date: str | None = None
+    date: datetime | None = None

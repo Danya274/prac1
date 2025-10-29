@@ -12,6 +12,6 @@ class NewsModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str]
-    text: Mapped[str] = mapped_column(nullable=True)
+    text: Mapped[str]
     link: Mapped[str]
     date: Mapped[datetime] = mapped_column(DateTime)

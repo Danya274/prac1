@@ -25,97 +25,175 @@ def make_request(url):
 def parser():
     logging.info('Start parsing')
     html = make_request(NEWS_URL)
+    if not html:
+        logging.error('Failed to fetch news page')
+        return []
+
     soup = BeautifulSoup(html, 'html.parser')
-    results = []
     items = soup.find_all('li', attrs={'class': 'PageNewsContent_item__NmJXl'})
     logging.info(f'News found: {len(items)}')
-    for item in items:
-        title = item.find('span', attrs={'class': 'PageNewsContentItem_title___TpWh'})
-        if title:
-            title = title.text
-        else:
-            title = 'No title'
+
+    results = []
+    successful_parses = 0
+
+    for index, item in enumerate(items, 1):
+        logging.info(f'Processing article {index}/{len(items)}')
+
+        title_elem = item.find('span', attrs={'class': 'PageNewsContentItem_title___TpWh'})
+        if not title_elem:
+            logging.debug(f'No title found for item {index}')
+            continue
+
+        title = title_elem.get_text(strip=True)
+        if not title:
+            continue
+
+        href_elem = item.find('a', href=True)
+        if not href_elem:
+            logging.debug(f'No link found for: {title}')
+            continue
+
+        href = href_elem['href']
+
+        if href.startswith('http'):
+            logging.debug(f'Skipping external link: {href}')
+            continue
+
+        full_url = BASE_URL + href if href.startswith('/') else BASE_URL + '/' + href
+
+        logging.info(f'Parsing article: {title[:50]}...')
+
         try:
-            href = item.find('a', attrs={'href': True})['href']
-        except Exception as e:
-            logging.info(f'Error: {e}')
-            href = None
-        if href:
-            if 'https' in href:
+            article_data = parse_article(full_url)
+            time.sleep(1)
+
+            text = article_data.get('text')
+            date_str = article_data.get('date')
+
+            if not text or not date_str:
+                logging.warning(f'Text or date not found for: {full_url}')
                 continue
-            else:
-                full_url = BASE_URL + href
-            logging.info('Parsing article')
+
             try:
-                article_data = parse_article(full_url)
-                time.sleep(1)
-                text = article_data['text'] if article_data['text'] else None
-                date = article_data['date'] if article_data['date'] else None
-                if date:
-                    date = datetime.strptime(date, '%d.%m.%Y %H:%M')
-                    results.append({
-                        'title': title,
-                        'text': text,
-                        'link': full_url,
-                        'date': date,
-                    })
-                else:
-                    logging.info(f'News has skipped: {title}')
-            except Exception as e:
-                logging.info(f'Error parse article {full_url}: {e}')
-        else:
+                date = datetime.strptime(date_str, '%d.%m.%Y %H:%M')
+            except ValueError as e:
+                logging.error(f'Date parsing error for "{date_str}": {e}')
+                continue
             results.append({
                 'title': title,
-                'text': 'No text',
-                'link': 'No link',
-                'date': 'No date',
+                'text': text,
+                'link': full_url,
+                'date': date,
             })
 
+            successful_parses += 1
+            logging.info(f'Successfully parsed article {successful_parses}')
+
+        except Exception as e:
+            logging.error(f'Article parsing error for {full_url}: {e}')
+            continue
+
+    logging.info(f'Parsing completed: {successful_parses}/{len(items)} articles successfully parsed')
     return results
 
 
 def parse_article(url):
     html = make_request(url)
+    if not html:
+        return {'date': None, 'text': None}
     soup = BeautifulSoup(html, 'html.parser')
-    date = soup.find('div', attrs={'class': 'ContentMetaDefault_date__wS0te'})
-    date = date.text if date else None
-    if date is None:
+
+    patterns = [
+
+        {
+            'date': [
+                {'name': 'div', 'attrs': {'class': 'ContentMetaDefault_date__wS0te'}},
+            ],
+            'text': [
+                {'name': 'div', 'attrs': {'class': 'PageContentCommonStyling_text__CKOzO commonArticle_text__ul5uZ commonArticle_zoom__SDMjc'}},
+            ]
+        },
+
+        {
+            'date': [
+                {'name': 'div', 'attrs': {'class': 'PageArticleHead_date__NRMcA'}},
+            ],
+            'text': [
+                {'name': 'div', 'attrs': {'class': 'PageArticleContentStyling_text__scE9w commonArticle_text__ul5uZ'}},
+            ]
+        },
+
+        {
+            'date': [
+                {'name': 'div', 'attrs': {'class': 'PageArticle_publishDate__v2Etv'}},  # 2 spans
+            ],
+            'text': [
+                {'name': 'div', 'attrs': {'class': 'PageArticleContentStyling_text__iD61m commonArticle_text__ul5uZ'}},
+            ]
+        },
+
+    ]
+
+
+    for pattern in patterns:
+        date = None
+        text = None
+
+        for date_selector in pattern['date']:
+            date = find_elements_by_selectors(soup, [date_selector])
+            if date:
+                # 2 spans
+                if (isinstance(date_selector, dict) and
+                        date_selector.get('attrs', {}).get('class') == 'PageArticle_publishDate__v2Etv'):
+                    date_cont = soup.find('div', attrs={'class': 'PageArticle_publishDate__v2Etv'})
+                    if date_cont:
+                        spans = date_cont.find_all('span')
+                        if len(spans) == 2:
+                            date_part = spans[0].get_text(strip=True)
+                            time_part = spans[1].get_text(strip=True)
+                            date = f"{date_part} {time_part}"
+                if date:
+                    break
+
+        for text_selector in pattern['text']:
+            text = find_elements_by_selectors(soup, [text_selector])
+            if text:
+                share_pos = text.rfind('Поделиться')
+                if share_pos != -1:
+                    text = text[:share_pos]
+                text = text.strip()
+                text = text.replace('/', '')
+                text = text.replace('\\', '')
+                break
+
+        if date and text:
+            logging.info(f"Found matching pattern: date={bool(date)}, text={bool(text)}")
+            return {'date': date, 'text': text}
+
+    return {'date': None, 'text': None}
+
+
+
+
+def find_elements_by_selectors(soup, selectors, attr=None):
+    for sel in selectors:
         try:
-            date_cont = soup.find('div', attrs={'class': 'PageArticle_publishDate__v2Etv'})
-            spans = date_cont.find_all('span')
-            date_span = spans[0].text.strip()
-            time_span = spans[1].text.strip()
-            full_date = date_span + ' ' + time_span
-            if full_date is None:
-                try:
-                    date = soup.find('div', attrs={'class': 'PageArticleContentHeader_date__cBz9Q'})
-                    date = date.text if date else None
-                except Exception as e:
-                    logging.error('Error with date parse num2')
+            if isinstance(sel, str):
+                element = soup.select_one(sel)
+            elif isinstance(sel, dict):
+                element = soup.find(**sel)
+            else:
+                continue
+
+            if element:
+                if attr:
+                    return element.get(attr)
+                else:
+                    return element.text.strip()
+
+
         except Exception as e:
-            logging.error('Error with date parse num1')
-    text = soup.find('div', attrs={'class': 'PageArticleContent_textWrapper__qjCKN'})
-    text = text.text if text else None
-    if text is None:
-        try:
-            text = soup.find('div', attrs={'class': 'PageArticleContentStyling_text__iD61m commonArticle_text__ul5uZ'})
-            text = text.text if text else None
-            if text is None:
-                try:
-                    text = soup.find('div', attrs={'class': 'PageArticleContentStyling_text__07I2Z commonArticle_text__ul5uZ commonArticle_zoom__SDMjc'})
-                    text = text.text if text else None
-                except Exception as e:
-                    logging.error('Error with text parse num2')
-        except Exception as e:
-            logging.error('Error with text parse num1')
-    remove_share_word = text.rfind('Поделиться') if text else None
-    if remove_share_word:
-        text = text[:remove_share_word + 1]
-    return {'date': date, 'text': text}
+            logging.error(f'Error parse elements by selectors: {e}')
+            continue
+    return None
 
-
-
-# def check_time(date: str):
-#     now = datetime.now()
-#     date = datetime.strptime(date, '%d.%m.%Y %H:%M')
-#     return (now - date).total_seconds() <= 86400
